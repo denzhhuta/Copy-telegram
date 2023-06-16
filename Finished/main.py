@@ -16,6 +16,7 @@ from aiogram.utils.exceptions import (MessageToEditNotFound, MessageCantBeEdited
 import logging
 import contextlib
 from contextlib import suppress
+import re
 
 class CheckSubscriptionUserMiddleware(BaseMiddleware):
     def __init__(self):
@@ -57,7 +58,21 @@ loop = asyncio.get_event_loop()
 storage = MemoryStorage()
 bot = aiogram.Bot(TOKEN_API)
 dp = aiogram.Dispatcher(bot, storage=storage)
+#function to parse caption
+async def format_text_with_entities(text, entities, as_html=True):
+    if text is None:
+        raise TypeError("Text is None.")
 
+    parse_mode = "HTML" if as_html else "Markdown"
+    formatted_text = text
+
+    # Create a message object to access the parse_entities method
+    message = types.Message(text=text, entities=entities)
+    if as_html:
+        formatted_text = message.parse_entities(as_html=True)
+
+    return formatted_text
+        
 async def delete_message(message: types.Message, sleep_time: int = 0):
     await asyncio.sleep(sleep_time)
     with suppress(MessageCantBeDeleted, MessageToDeleteNotFound):
@@ -81,12 +96,18 @@ async def album_handler(messages: List[types.Message]):
 
         keyboard = aiogram.types.InlineKeyboardMarkup().row(*buttons_row1).row(*buttons_row2)
         
+        if message.caption:
+            formatted_caption = await format_text_with_entities(message.caption, message.caption_entities, as_html=True)
+        else:
+            caption = ''
+        
         await bot.send_photo(
-            chat_id=message.chat.id,
+            chat_id=message.from_user.id,
             photo=message.photo[-1].file_id,
-            caption=message.caption,
+            caption=formatted_caption,
             caption_entities=message.caption_entities,
-            reply_markup=keyboard
+            reply_markup=keyboard,
+            parse_mode="HTML"
         )
 
                
@@ -113,52 +134,63 @@ async def process_forwarded_message(message: types.Message, state: FSMContext):
          return 
     
     if message.caption:
-        caption = message.caption
+        formatted_caption = await format_text_with_entities(message.caption, message.caption_entities, as_html=True)
     else:
         caption = ''
     
     if message.photo:
         await bot.send_photo(chat_id=message.from_user.id,
                              photo=message.photo[-1].file_id,
-                             caption=caption,
-                             reply_markup=keyboard)
+                             caption=formatted_caption,
+                             reply_markup=keyboard,
+                             parse_mode="HTML")
+        
     elif message.document:
         await bot.send_document(chat_id=message.from_user.id,
                                 document=message.document.file_id,
-                                caption=caption,
-                                reply_markup=keyboard)
+                                caption=formatted_caption,
+                                reply_markup=keyboard,
+                                parse_mode="HTML")
     elif message.video:
         await bot.send_video(chat_id=message.from_user.id,
                              video=message.video.file_id,
-                             caption=caption,
-                             reply_markup=keyboard)
+                             caption=formatted_caption,
+                             reply_markup=keyboard,
+                             parse_mode="HTML")
     elif message.audio:
         await bot.send_audio(chat_id=message.from_user.id,
                              audio=message.audio.file_id,
-                             caption=caption,
-                             reply_markup=keyboard)
+                             caption=formatted_caption,
+                             reply_markup=keyboard,
+                             parse_mode="HTML")
     elif message.animation:
         await bot.send_animation(chat_id=message.from_user.id,
                                  animation=message.animation.file_id,
-                                 caption=caption,
-                                 reply_markup=keyboard)
+                                 caption=formatted_caption,
+                                 reply_markup=keyboard,
+                                 parse_mode="HTML")
     elif message.sticker:
         await bot.send_sticker(chat_id=message.from_user.id,
                                sticker=message.sticker.file_id,
-                               reply_markup=keyboard)
+                               reply_markup=keyboard,
+                               parse_mode="HTML")
     elif message.voice:
         await bot.send_voice(chat_id=message.from_user.id,
                              voice=message.voice.file_id,
-                             caption=caption,
-                             reply_markup=keyboard)
+                             caption=formatted_caption,
+                             reply_markup=keyboard,
+                             parse_mode="HTML")
     elif message.video_note:
         await bot.send_video_note(chat_id=message.from_user.id,
                                   video_note=message.video_note.file_id,
-                                  reply_markup=keyboard)
+                                  reply_markup=keyboard,
+                                  parse_mode="HTML")
     else:
         await bot.send_message(chat_id=message.from_user.id,
-                               text=message.text,
-                               reply_markup=keyboard)
+                               text=message.html_text,
+                               reply_markup=keyboard,
+                               parse_mode="HTML")
+                               
 ################################################################################################
 ################################################################################################
 ################################################################################################
@@ -388,6 +420,11 @@ async def add_media_complete_handler(message: types.Message, state: FSMContext):
 
             if is_media:
                 caption_check = message_complete_forwarded.caption if message_complete_forwarded and message_complete_forwarded.caption else ''
+                # Add the following lines to check if the message has a caption or just text
+                if 'caption' in message_complete_forwarded and message_complete_forwarded.caption:
+                    caption_check = message_complete_forwarded.caption
+                elif 'text' in message_complete_forwarded and message_complete_forwarded.text:
+                    caption_check = message_complete_forwarded.text
 
                 if message_complete_forwarded and message_complete_forwarded.photo:       
                     await bot.edit_message_media(
